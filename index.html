@@ -201,6 +201,15 @@ tr.sel td { background: var(--accent-soft); }
 .x-top .x-t { margin-left: auto; font: 500 16px var(--mono); font-variant-numeric: tabular-nums; }
 .x-sub { font: 400 12px/1.5 var(--mono); color: var(--muted); }
 .setrow { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 8px 12px; align-items: center; margin-top: 10px; }
+.autoamt { display: flex; align-items: center; justify-content: flex-end; gap: 4px; border: 1px dashed var(--line); border-radius: 6px; padding: 7px 8px; font: 500 15px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.autoamt b { font-weight: 500; color: var(--fg); }
+.sub-meta .mini { width: 84px; padding: 6px 8px; }
+.sub-meta .amt.mini { width: 108px; padding: 0 8px; }
+.subform { display: grid; gap: 8px; margin-top: 8px; }
+.subform .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.subform .pair { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px; }
+.subform .paid { display: grid; gap: 4px; font: 400 12px var(--mono); color: var(--muted); }
+.subprev { font: 400 12px/1.5 var(--mono); color: var(--muted); margin: 0; }
 .dstat { margin: 8px 0 0; font: 500 14px var(--mono); }
 .dstat.error { color: var(--bad); } .dstat.account { color: var(--good); }
 .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin: 14px 0; }
@@ -497,7 +506,7 @@ else if (typeof exports === 'object'){
 <script>
 (function () {
   'use strict';
-  var SCHEMA = "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);\nCREATE TABLE IF NOT EXISTS plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, total REAL NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, days INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);\nCREATE TABLE IF NOT EXISTS plan_items (plan_id TEXT NOT NULL, item_id TEXT NOT NULL, name TEXT NOT NULL, daily_amount REAL NOT NULL, position INTEGER NOT NULL, custom INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (plan_id, item_id));\nCREATE TABLE IF NOT EXISTS day_logs (plan_id TEXT NOT NULL, day TEXT NOT NULL, logged INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (plan_id, day));\nCREATE TABLE IF NOT EXISTS day_item_spend (plan_id TEXT NOT NULL, day TEXT NOT NULL, item_id TEXT NOT NULL, amount REAL NOT NULL, PRIMARY KEY (plan_id, day, item_id));\nCREATE TABLE IF NOT EXISTS trackers (id TEXT PRIMARY KEY, name TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, days INTEGER NOT NULL, buffer_pct REAL NOT NULL DEFAULT 10, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);\nCREATE TABLE IF NOT EXISTS tracker_items (tracker_id TEXT NOT NULL, item_id TEXT NOT NULL, name TEXT NOT NULL, one_off INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL, PRIMARY KEY (tracker_id, item_id));\nCREATE TABLE IF NOT EXISTS tracker_days (tracker_id TEXT NOT NULL, day TEXT NOT NULL, logged INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (tracker_id, day));\nCREATE TABLE IF NOT EXISTS tracker_spend (tracker_id TEXT NOT NULL, day TEXT NOT NULL, item_id TEXT NOT NULL, amount REAL NOT NULL, PRIMARY KEY (tracker_id, day, item_id));\nPRAGMA user_version = 2;\n";
+  var SCHEMA = "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);\nCREATE TABLE IF NOT EXISTS plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, total REAL NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, days INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);\nCREATE TABLE IF NOT EXISTS plan_items (plan_id TEXT NOT NULL, item_id TEXT NOT NULL, name TEXT NOT NULL, daily_amount REAL NOT NULL, position INTEGER NOT NULL, custom INTEGER NOT NULL DEFAULT 0, sub_amount REAL, sub_start TEXT, sub_days INTEGER, sub_n INTEGER, sub_unit TEXT, sub_renews INTEGER, PRIMARY KEY (plan_id, item_id));\nCREATE TABLE IF NOT EXISTS day_logs (plan_id TEXT NOT NULL, day TEXT NOT NULL, logged INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (plan_id, day));\nCREATE TABLE IF NOT EXISTS day_item_spend (plan_id TEXT NOT NULL, day TEXT NOT NULL, item_id TEXT NOT NULL, amount REAL NOT NULL, PRIMARY KEY (plan_id, day, item_id));\nCREATE TABLE IF NOT EXISTS trackers (id TEXT PRIMARY KEY, name TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, days INTEGER NOT NULL, buffer_pct REAL NOT NULL DEFAULT 10, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);\nCREATE TABLE IF NOT EXISTS tracker_items (tracker_id TEXT NOT NULL, item_id TEXT NOT NULL, name TEXT NOT NULL, one_off INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL, sub_amount REAL, sub_start TEXT, sub_days INTEGER, sub_n INTEGER, sub_unit TEXT, sub_renews INTEGER, PRIMARY KEY (tracker_id, item_id));\nCREATE TABLE IF NOT EXISTS tracker_days (tracker_id TEXT NOT NULL, day TEXT NOT NULL, logged INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (tracker_id, day));\nCREATE TABLE IF NOT EXISTS tracker_spend (tracker_id TEXT NOT NULL, day TEXT NOT NULL, item_id TEXT NOT NULL, amount REAL NOT NULL, PRIMARY KEY (tracker_id, day, item_id));\nPRAGMA user_version = 3;\n";
   var QUICK = ['Bus fare', 'Lunch', 'Tea & snacks', 'Phone recharge', 'Savings'];
   var COMMON = ['Bus fare', 'Auto or taxi', 'Breakfast', 'Lunch', 'Dinner', 'Tea & snacks', 'Groceries', 'Phone recharge', 'Fuel', 'Medicine', 'Shopping', 'Eating out', 'Gift'];
   var BUFFERS = [0, 5, 10, 15, 20, 25];
@@ -541,7 +550,7 @@ else if (typeof exports === 'object'){
   var plans = [], trackers = [];
   var store = { idb: null, file: null, size: 0, pending: false, err: false };
   var state = null, tform = null, lastDraft = {};
-  var ui = { view: 'planner', id: null, day: null, showAll: false, confirmDel: false, confirmItem: null, plannerNote: '' };
+  var ui = { view: 'planner', id: null, day: null, showAll: false, confirmDel: false, confirmItem: null, plannerNote: '', addMode: 'spend', editSub: null, addName: '' };
   var plannerPicker = null, trackPicker = null;
 
   function q(sql, params) {
@@ -581,10 +590,46 @@ else if (typeof exports === 'object'){
       db.run('COMMIT');
     } catch (e) { try { db.run('ROLLBACK'); } catch (x) { /* ignore */ } throw e; }
   }
+  /* Version 3 adds subscription columns to the expense tables. */
+  function addSubColumns(table) {
+    if (!tableExists(table)) return;
+    var have = {};
+    q('PRAGMA table_info(' + table + ')').forEach(function (r) { have[r.name] = true; });
+    [['sub_amount', 'REAL'], ['sub_start', 'TEXT'], ['sub_days', 'INTEGER'], ['sub_n', 'INTEGER'], ['sub_unit', 'TEXT'], ['sub_renews', 'INTEGER']].forEach(function (c) {
+      if (!have[c[0]]) db.run('ALTER TABLE ' + table + ' ADD COLUMN ' + c[0] + ' ' + c[1]);
+    });
+  }
   function ensureSchema() {
-    var v = q('PRAGMA user_version')[0].user_version;
-    if (tableExists('plans') && v < 2) migrate1to2();
+    var v = q('PRAGMA user_version')[0].user_version, has = tableExists('plans');
+    if (has && v < 2) migrate1to2();
+    if (has && v < 3) { addSubColumns('plan_items'); addSubColumns('tracker_items'); }
     db.exec(SCHEMA);
+  }
+
+  /* A subscription is a payment that covers a period. Its cost is spread evenly over the days it covers. */
+  function cleanSub(x) {
+    if (!x || !(+x.amount > 0) || !DATE_RE.test(x.start || '')) return null;
+    var days = Math.floor(+x.days);
+    if (!(days >= 1)) return null;
+    var unit = ['days', 'weeks', 'months', 'years'].indexOf(x.unit) > -1 ? x.unit : 'days';
+    return { amount: +x.amount, start: x.start, days: Math.min(36500, days), n: Math.max(1, Math.floor(+x.n) || days), unit: unit, renews: !!x.renews };
+  }
+  function subDays(start, n, unit) {
+    var s = parse(start), endEx = unit === 'days' ? addDays(s, n) : unit === 'weeks' ? addDays(s, n * 7) : unit === 'months' ? addMonths(s, n) : addMonths(s, n * 12);
+    return Math.max(1, diff(s, endEx));
+  }
+  var subShare = function (it) { return it.sub ? it.sub.amount / it.sub.days : 0; };
+  var subLast = function (sub) { return iso(addDays(parse(sub.start), sub.days - 1)); };
+  var subCovers = function (it, day) { return !!it.sub && day >= it.sub.start && (it.sub.renews || day <= subLast(it.sub)); };
+  var unitWord = function (n, unit) { return n + ' ' + (n === 1 ? unit.replace(/s$/, '') : unit); };
+  function subText(it) {
+    var s = it.sub;
+    return s.renews ? rs(r2(s.amount)) + ' every ' + unitWord(s.n, s.unit) : rs(r2(s.amount)) + ' for ' + unitWord(s.n, s.unit) + ' from ' + shortNoYear(parse(s.start));
+  }
+  function itemSpend(o, it, day) {
+    if (it.sub) return subCovers(it, day) ? subShare(it) : 0;
+    var d = o.spend[day], v = d && d.c[it.id];
+    return v === undefined || v === null ? 0 : v;
   }
 
   function cleanObj(o) {
@@ -601,6 +646,8 @@ else if (typeof exports === 'object'){
       var it = { id: cleanId(x && x.id, 'c' + i), name: String((x && x.name) || '').slice(0, 40) };
       if (P) { it.amt = Math.max(0, +(x && x.amt) || 0); it.custom = !!(x && x.custom); }
       else it.oneOff = !!(x && x.oneOff);
+      var sb = cleanSub(x && x.sub);
+      if (sb) it.sub = sb;
       c.items.push(it);
     });
     Object.keys(o.spend || {}).forEach(function (day) {
@@ -619,27 +666,29 @@ else if (typeof exports === 'object'){
       var p = { kind: 'plan', id: r.id, name: r.name, total: r.total, start: r.start_date, end: r.end_date, days: r.days, createdAt: r.created_at, updatedAt: r.updated_at, items: [], spend: {} };
       PM[r.id] = p; pl.push(p);
     });
-    q('SELECT * FROM plan_items ORDER BY plan_id, position').forEach(function (r) { var p = PM[r.plan_id]; if (p) p.items.push({ id: r.item_id, name: r.name, amt: r.daily_amount, custom: !!r.custom }); });
+    var subOf = function (r) { return r.sub_amount > 0 ? { amount: r.sub_amount, start: r.sub_start, days: r.sub_days, n: r.sub_n, unit: r.sub_unit, renews: !!r.sub_renews } : null; };
+    q('SELECT * FROM plan_items ORDER BY plan_id, position').forEach(function (r) { var p = PM[r.plan_id]; if (p) p.items.push({ id: r.item_id, name: r.name, amt: r.daily_amount, custom: !!r.custom, sub: subOf(r) }); });
     q('SELECT * FROM day_logs').forEach(function (r) { var p = PM[r.plan_id]; if (p) rec(p, r.day).logged = !!r.logged; });
     q('SELECT * FROM day_item_spend').forEach(function (r) { var p = PM[r.plan_id]; if (p) rec(p, r.day).c[r.item_id] = r.amount; });
     q('SELECT * FROM trackers').forEach(function (r) {
       var t = { kind: 'tracker', id: r.id, name: r.name, start: r.start_date, end: r.end_date, days: r.days, buffer: r.buffer_pct, createdAt: r.created_at, updatedAt: r.updated_at, items: [], spend: {} };
       TM[r.id] = t; tl.push(t);
     });
-    q('SELECT * FROM tracker_items ORDER BY tracker_id, position').forEach(function (r) { var t = TM[r.tracker_id]; if (t) t.items.push({ id: r.item_id, name: r.name, oneOff: !!r.one_off }); });
+    q('SELECT * FROM tracker_items ORDER BY tracker_id, position').forEach(function (r) { var t = TM[r.tracker_id]; if (t) t.items.push({ id: r.item_id, name: r.name, oneOff: !!r.one_off, sub: subOf(r) }); });
     q('SELECT * FROM tracker_days').forEach(function (r) { var t = TM[r.tracker_id]; if (t) rec(t, r.day).logged = !!r.logged; });
     q('SELECT * FROM tracker_spend').forEach(function (r) { var t = TM[r.tracker_id]; if (t) rec(t, r.day).c[r.item_id] = r.amount; });
     plans = pl.map(cleanObj).filter(Boolean);
     trackers = tl.map(cleanObj).filter(Boolean);
   }
 
+  function subCols(it) { return it.sub ? [it.sub.amount, it.sub.start, it.sub.days, it.sub.n, it.sub.unit, it.sub.renews ? 1 : 0] : [null, null, null, null, null, null]; }
   function persistObj(o) {
     db.run('BEGIN');
     try {
       if (o.kind === 'plan') {
         db.run('INSERT OR REPLACE INTO plans (id, name, total, start_date, end_date, days, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)', [o.id, o.name, o.total, o.start, o.end, o.days, o.createdAt, o.updatedAt]);
         ['plan_items', 'day_logs', 'day_item_spend'].forEach(function (t) { db.run('DELETE FROM ' + t + ' WHERE plan_id = ?', [o.id]); });
-        o.items.forEach(function (it, i) { db.run('INSERT INTO plan_items (plan_id, item_id, name, daily_amount, position, custom) VALUES (?,?,?,?,?,?)', [o.id, it.id, it.name, it.amt, i, it.custom ? 1 : 0]); });
+        o.items.forEach(function (it, i) { db.run('INSERT INTO plan_items (plan_id, item_id, name, daily_amount, position, custom, sub_amount, sub_start, sub_days, sub_n, sub_unit, sub_renews) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [o.id, it.id, it.name, it.amt, i, it.custom ? 1 : 0].concat(subCols(it))); });
         Object.keys(o.spend).forEach(function (day) {
           var d = o.spend[day];
           db.run('INSERT INTO day_logs (plan_id, day, logged) VALUES (?,?,?)', [o.id, day, d.logged ? 1 : 0]);
@@ -648,7 +697,7 @@ else if (typeof exports === 'object'){
       } else {
         db.run('INSERT OR REPLACE INTO trackers (id, name, start_date, end_date, days, buffer_pct, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)', [o.id, o.name, o.start, o.end, o.days, o.buffer, o.createdAt, o.updatedAt]);
         ['tracker_items', 'tracker_days', 'tracker_spend'].forEach(function (t) { db.run('DELETE FROM ' + t + ' WHERE tracker_id = ?', [o.id]); });
-        o.items.forEach(function (it, i) { db.run('INSERT INTO tracker_items (tracker_id, item_id, name, one_off, position) VALUES (?,?,?,?,?)', [o.id, it.id, it.name, it.oneOff ? 1 : 0, i]); });
+        o.items.forEach(function (it, i) { db.run('INSERT INTO tracker_items (tracker_id, item_id, name, one_off, position, sub_amount, sub_start, sub_days, sub_n, sub_unit, sub_renews) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [o.id, it.id, it.name, it.oneOff ? 1 : 0, i].concat(subCols(it))); });
         Object.keys(o.spend).forEach(function (day) {
           var d = o.spend[day];
           db.run('INSERT INTO tracker_days (tracker_id, day, logged) VALUES (?,?,?)', [o.id, day, d.logged ? 1 : 0]);
@@ -911,7 +960,14 @@ else if (typeof exports === 'object'){
     if (isFinite(s.total)) d.total = Math.max(0, +s.total);
     readPeriod(s, d);
     if (typeof s.sample === 'boolean') d.sample = s.sample;
-    if (Array.isArray(s.items)) d.items = s.items.slice(0, 40).map(function (x) { return { id: nid(), name: String((x && x.name) || '').slice(0, 40), amt: Math.max(0, +(x && x.amt) || 0) }; });
+    if (Array.isArray(s.items)) d.items = s.items.slice(0, 40).map(function (x) {
+      var it = { id: nid(), name: String((x && x.name) || '').slice(0, 40), amt: Math.max(0, +(x && x.amt) || 0) };
+      if (x && x.sub && typeof x.sub === 'object') {
+        var unit = ['days', 'weeks', 'months', 'years'].indexOf(x.sub.unit) > -1 ? x.sub.unit : 'months';
+        it.sub = { amount: Math.max(0, +x.sub.amount || 0), n: Math.min(MAXN[unit], Math.max(1, Math.floor(+x.sub.n) || 1)), unit: unit };
+      }
+      return it;
+    });
     return d;
   }
   function loadTrackDraft() {
@@ -923,7 +979,10 @@ else if (typeof exports === 'object'){
   }
   function saveDrafts() {
     saveDraft('draft', { total: state.total, mode: state.mode, start: state.start, end: state.end, n: state.n, unit: state.unit, sample: state.sample,
-      items: state.items.map(function (x) { return { name: x.name, amt: x.amt }; }) });
+      items: state.items.map(function (x) { return { name: x.name, amt: x.amt, sub: x.sub || null }; }) });
+  }
+  function syncSubs() {
+    state.items.forEach(function (it) { if (it.sub) it.amt = r2(it.sub.amount / subDays(state.start, it.sub.n, it.sub.unit)); });
   }
   var touched = function () { state.sample = false; ui.plannerNote = ''; };
 
@@ -932,6 +991,7 @@ else if (typeof exports === 'object'){
     return { s: c.s, last: c.last, days: c.days, total: total, perDay: total / c.days };
   }
 
+  var UNIT_OPTS = '<option value="days">days</option><option value="weeks">weeks</option><option value="months">months</option><option value="years">years</option>';
   function renderItems() {
     var ul = $('rows');
     ul.innerHTML = '';
@@ -940,17 +1000,29 @@ else if (typeof exports === 'object'){
       var li = document.createElement('li');
       li.className = 'row'; li.dataset.id = it.id;
       li.style.setProperty('--seg', 'var(--c' + (i % 6 + 1) + ')');
-      li.innerHTML = '<span class="dot"></span><input class="nm" type="text" maxlength="40" aria-label="Expense name" placeholder="Expense name">' +
-        '<label class="amt"><span>₹</span><input class="am" type="number" inputmode="decimal" min="0" step="any" aria-label="Amount per day" placeholder="0"></label>' +
-        '<button class="del" type="button" data-act="del" aria-label="Remove expense">×</button>' +
-        '<div class="meta"><span class="tot"></span><button class="textbtn" type="button" data-act="fill">Use what is left</button></div>';
+      if (it.sub) {
+        li.innerHTML = '<span class="dot"></span><input class="nm" type="text" maxlength="40" aria-label="Subscription name" placeholder="Subscription name">' +
+          '<div class="autoamt" aria-label="Daily share"><span>₹</span><b class="shr"></b></div>' +
+          '<button class="del" type="button" data-act="del" aria-label="Remove subscription">×</button>' +
+          '<div class="meta sub-meta"><label class="amt mini"><span>₹</span><input class="sub-amt" type="number" inputmode="decimal" min="0" step="any" aria-label="Amount paid" placeholder="Paid"></label><span>covers</span>' +
+          '<input class="field mini sub-n" type="number" inputmode="numeric" min="1" step="1" aria-label="Number of units"><select class="field mini sub-unit" aria-label="Unit">' + UNIT_OPTS + '</select><span class="tot"></span></div>';
+        li.querySelector('.sub-amt').value = it.sub.amount === 0 ? '' : it.sub.amount;
+        li.querySelector('.sub-n').value = it.sub.n;
+        li.querySelector('.sub-unit').value = it.sub.unit;
+      } else {
+        li.innerHTML = '<span class="dot"></span><input class="nm" type="text" maxlength="40" aria-label="Expense name" placeholder="Expense name">' +
+          '<label class="amt"><span>₹</span><input class="am" type="number" inputmode="decimal" min="0" step="any" aria-label="Amount per day" placeholder="0"></label>' +
+          '<button class="del" type="button" data-act="del" aria-label="Remove expense">×</button>' +
+          '<div class="meta"><span class="tot"></span><button class="textbtn" type="button" data-act="fill">Use what is left</button></div>';
+        li.querySelector('.am').value = it.amt === 0 ? '' : it.amt;
+      }
       li.querySelector('.nm').value = it.name;
-      li.querySelector('.am').value = it.amt === 0 ? '' : it.amt;
       ul.appendChild(li);
     });
   }
 
   function updatePlanner() {
+    syncSubs();
     var c = calc();
     plannerPicker.render();
     $('perDay').textContent = fmt(c.perDay);
@@ -978,7 +1050,10 @@ else if (typeof exports === 'object'){
     $('rows').querySelectorAll('.row').forEach(function (li) {
       var it = state.items.find(function (x) { return x.id === li.dataset.id; });
       if (!it) return;
-      li.querySelector('.tot').textContent = rs(it.amt * c.days) + ' over ' + plural(c.days, 'day');
+      if (it.sub) {
+        li.querySelector('.shr').textContent = fmt(it.amt);
+        li.querySelector('.tot').textContent = '= ' + rs(it.amt) + ' a day, ' + rs(r2(it.amt * c.days)) + ' over ' + plural(c.days, 'day');
+      } else li.querySelector('.tot').textContent = rs(it.amt * c.days) + ' over ' + plural(c.days, 'day');
       li.querySelector('.del').setAttribute('aria-label', 'Remove ' + (it.name || 'expense'));
     });
     var showNote = state.sample || !!ui.plannerNote;
@@ -997,41 +1072,54 @@ else if (typeof exports === 'object'){
 
   $('total').addEventListener('input', function (e) { touched(); state.total = Math.max(0, parseFloat(e.target.value) || 0); updatePlanner(); });
   var rowsEl = $('rows');
+  var itemOf = function (el) { var li = el.closest('.row'); return li ? { li: li, it: state.items.find(function (x) { return x.id === li.dataset.id; }) } : null; };
   rowsEl.addEventListener('input', function (e) {
-    var li = e.target.closest('.row');
-    if (!li) return;
-    var it = state.items.find(function (x) { return x.id === li.dataset.id; });
-    if (!it) return;
+    var r = itemOf(e.target);
+    if (!r || !r.it) return;
+    var t = e.target, it = r.it;
     touched();
-    if (e.target.classList.contains('nm')) it.name = e.target.value;
-    if (e.target.classList.contains('am')) it.amt = Math.max(0, parseFloat(e.target.value) || 0);
+    if (t.classList.contains('nm')) it.name = t.value;
+    else if (t.classList.contains('am')) it.amt = Math.max(0, parseFloat(t.value) || 0);
+    else if (t.classList.contains('sub-amt') && it.sub) it.sub.amount = Math.max(0, parseFloat(t.value) || 0);
+    else if (t.classList.contains('sub-n') && it.sub) { var v = Math.floor(parseFloat(t.value)); it.sub.n = isNaN(v) || v < 1 ? 1 : Math.min(MAXN[it.sub.unit], v); }
+    updatePlanner();
+  });
+  rowsEl.addEventListener('change', function (e) {
+    var r = itemOf(e.target);
+    if (!r || !r.it || !r.it.sub || !e.target.classList.contains('sub-unit')) return;
+    touched();
+    r.it.sub.unit = e.target.value;
+    r.it.sub.n = Math.min(r.it.sub.n, MAXN[r.it.sub.unit]);
+    r.li.querySelector('.sub-n').value = r.it.sub.n;
     updatePlanner();
   });
   rowsEl.addEventListener('click', function (e) {
     var btn = e.target.closest('button[data-act]');
     if (!btn) return;
-    var li = btn.closest('.row'), it = state.items.find(function (x) { return x.id === li.dataset.id; });
-    if (!it) return;
+    var r = itemOf(btn);
+    if (!r || !r.it) return;
     touched();
-    if (btn.dataset.act === 'del') { state.items = state.items.filter(function (x) { return x.id !== it.id; }); renderItems(); }
+    if (btn.dataset.act === 'del') { state.items = state.items.filter(function (x) { return x.id !== r.it.id; }); renderItems(); }
     else if (btn.dataset.act === 'fill') {
       var c = calc(), other = 0;
-      state.items.forEach(function (x) { if (x.id !== it.id) other += x.amt; });
-      it.amt = Math.max(0, r2(c.perDay - other));
-      li.querySelector('.am').value = it.amt === 0 ? '' : it.amt;
+      state.items.forEach(function (x) { if (x.id !== r.it.id) other += x.amt; });
+      r.it.amt = Math.max(0, r2(c.perDay - other));
+      r.li.querySelector('.am').value = r.it.amt === 0 ? '' : r.it.amt;
     }
     updatePlanner();
   });
-  function addPlannerItem(name) {
+  function addPlannerItem(name, isSub) {
     var it = { id: nid(), name: name, amt: 0 };
+    if (isSub) it.sub = { amount: 0, n: 1, unit: 'months' };
     state.items.push(it); touched(); renderItems(); updatePlanner();
     var li = rowsEl.querySelector('.row[data-id="' + it.id + '"]');
-    if (li) li.querySelector(name ? '.am' : '.nm').focus();
+    if (li) li.querySelector((name && !isSub) ? '.am' : '.nm').focus();
   }
-  QUICK.concat(['+ Custom']).forEach(function (name, i) {
+  QUICK.concat(['+ Custom', '+ Subscription']).forEach(function (name, i) {
     var b = document.createElement('button');
     b.type = 'button'; b.className = 'chip'; b.textContent = name;
-    b.addEventListener('click', function () { addPlannerItem(i === QUICK.length ? '' : name); });
+    b.title = i === QUICK.length + 1 ? 'A payment that covers a period, such as a monthly recharge. Its cost is spread over the days it covers.' : '';
+    b.addEventListener('click', function () { addPlannerItem(i >= QUICK.length ? '' : name, i === QUICK.length + 1); });
     $('quick').appendChild(b);
   });
   $('reset').addEventListener('click', function () { state = defaults(); ui.plannerNote = ''; initPlanner(); });
@@ -1040,10 +1128,8 @@ else if (typeof exports === 'object'){
      SHARED LOGIC FOR PLANS AND TRACKERS
      ===================================================================== */
   function dayInfo(o, di) {
-    var d = o.spend[di];
-    if (!d) return { logged: false, spent: 0 };
-    var spent = 0, any = !!d.logged;
-    Object.keys(d.c).forEach(function (k) { spent += d.c[k]; any = true; });
+    var d = o.spend[di], spent = 0, any = !!(d && (d.logged || hasKeys(d.c)));
+    o.items.forEach(function (it) { spent += itemSpend(o, it, di); });
     return { logged: any, spent: spent };
   }
   function loggedRows(o) {
@@ -1075,8 +1161,8 @@ else if (typeof exports === 'object'){
     var E = elapsedInfo(o);
     var items = o.items.map(function (it) {
       var s = 0;
-      rows.forEach(function (r) { var v = o.spend[r.day].c[it.id]; if (v) s += v; });
-      var planned = it.custom ? 0 : it.amt * rows.length;
+      rows.forEach(function (r) { s += itemSpend(o, it, r.day); });
+      var planned = it.custom ? 0 : (it.sub ? s : it.amt * rows.length);
       return { item: it, planned: planned, spent: s, diff: planned - s };
     });
     return { per: per, rows: rows, net: run, spent: spent, loggedDays: rows.length, elapsed: E.elapsed, unlogged: E.unlogged, left: o.total - spent, items: items };
@@ -1086,14 +1172,15 @@ else if (typeof exports === 'object'){
     rows.forEach(function (r) { total += r.spent; if (!high || r.spent > high.spent) high = r; });
     var items = o.items.map(function (it) {
       var tot = 0, nd = 0;
-      rows.forEach(function (r) { var v = o.spend[r.day].c[it.id]; if (v !== undefined) { tot += v; if (v > 0) nd++; } });
+      rows.forEach(function (r) { var v = itemSpend(o, it, r.day); tot += v; if (v > 0) nd++; });
       var avg = T ? tot / T : 0;
-      return { item: it, name: it.name, oneOff: !!it.oneOff, total: tot, daysSpent: nd, avg: avg, avgSpendDay: nd ? tot / nd : 0, share: 0, sugg: it.oneOff ? 0 : Math.ceil(avg * (1 + buf) - 1e-9) };
+      return { item: it, name: it.name, oneOff: !!it.oneOff, sub: it.sub || null, total: tot, daysSpent: nd, avg: avg, avgSpendDay: nd ? tot / nd : 0, share: 0,
+        sugg: it.sub ? r2(subShare(it)) : it.oneOff ? 0 : Math.ceil(avg * (1 + buf) - 1e-9) };
     });
     var reg = 0, one = 0, sugg = 0;
     items.forEach(function (x) { x.share = total ? x.total / total * 100 : 0; if (x.oneOff) one += x.total; else reg += x.total; sugg += x.sugg; });
     var E = elapsedInfo(o);
-    return { rows: rows, T: T, total: total, high: high, items: items, reg: reg, one: one, regAvg: T ? reg / T : 0, sugg: sugg,
+    return { rows: rows, T: T, total: total, high: high, items: items, reg: reg, one: one, regAvg: T ? reg / T : 0, sugg: r2(sugg),
       minDays: Math.min(7, o.days), elapsed: E.elapsed, unlogged: E.unlogged };
   }
   var netWord = function (v) { return v > 0.005 ? 'Saved' : v < -0.005 ? 'Overspent' : 'Break-even'; };
@@ -1122,7 +1209,7 @@ else if (typeof exports === 'object'){
       var isP = h.indexOf('plan-') === 0, id = h.slice(5);
       if ((isP ? plans : trackers).some(function (p) { return p.id === id; })) {
         var v = isP ? 'plan' : 'track';
-        if (ui.id !== id || ui.view !== v) { ui.id = id; ui.day = null; ui.showAll = false; ui.confirmDel = false; ui.confirmItem = null; }
+        if (ui.id !== id || ui.view !== v) { ui.id = id; ui.day = null; ui.showAll = false; ui.confirmDel = false; ui.confirmItem = null; ui.addMode = 'spend'; ui.editSub = null; ui.addName = ''; }
         next = v;
       } else next = isP ? 'plans' : 'find';
     }
@@ -1161,7 +1248,11 @@ else if (typeof exports === 'object'){
     if (c.total <= 0) return;
     var name = ($('planName').value.trim() || rangeText({ days: c.days, start: iso(c.s), end: iso(c.last) })).slice(0, 60), now = Date.now();
     var p = { kind: 'plan', id: rid('p'), name: name, total: c.total, start: iso(c.s), end: iso(c.last), days: c.days,
-      items: state.items.map(function (x, i) { return { id: 'c' + i, name: (x.name || '').trim() || 'Untitled', amt: x.amt, custom: false }; }),
+      items: state.items.map(function (x, i) {
+        var it = { id: 'c' + i, name: (x.name || '').trim() || 'Untitled', amt: x.amt, custom: false };
+        if (x.sub && x.sub.amount > 0) it.sub = { amount: x.sub.amount, start: iso(c.s), days: subDays(iso(c.s), x.sub.n, x.sub.unit), n: x.sub.n, unit: x.sub.unit, renews: true };
+        return it;
+      }),
       spend: {}, createdAt: now, updatedAt: now };
     plans.unshift(p);
     touch(p);
@@ -1298,9 +1389,9 @@ else if (typeof exports === 'object'){
   }
 
   function dayPanelHTML(o) {
-    var isP = o.kind === 'plan', T = todayIso();
+    var isP = o.kind === 'plan', T = todayIso(), what = isP ? 'plan' : 'tracker';
     var html = '<div class="lbl" id="dayLbl">Log a day</div>';
-    if (o.start > T) return html + '<p class="empty">This ' + (isP ? 'plan' : 'tracker') + ' starts on ' + long(parse(o.start)) + '. You can log spending from that day.</p>';
+    if (o.start > T) return html + '<p class="empty">This ' + what + ' starts on ' + long(parse(o.start)) + '. You can log spending from that day.</p>';
     var di = ui.day, d = o.spend[di] || { c: {} }, hi = maxLogDay(o);
     html += '<div class="day-nav"><button type="button" data-act="prev" aria-label="Previous day"' + (di <= o.start ? ' disabled' : '') + '>‹</button>' +
       '<input class="field" id="dDate" type="date" min="' + o.start + '" max="' + hi + '" value="' + di + '" aria-label="Day to log">' +
@@ -1309,27 +1400,68 @@ else if (typeof exports === 'object'){
     html += '<div class="lbl">What you spent</div><ul class="rows" id="tRows">';
     if (!o.items.length) html += '<li class="empty">No expenses yet. Add the first one below, for example Lunch.</li>';
     o.items.forEach(function (it, i) {
-      var v = d.c[it.id], removable = !isP || it.custom, confirming = ui.confirmItem === it.id;
+      var v = d.c[it.id], removable = !isP || it.custom, confirming = ui.confirmItem === it.id, nm = it.name || 'this expense';
+      var cov = it.sub ? subCovers(it, di) : false;
       html += '<li class="trow" data-item="' + esc(it.id) + '" style="--seg:var(--c' + (i % 6 + 1) + ')"><span class="dot"></span>' +
         (removable ? '<input class="nm-in" type="text" maxlength="40" value="' + esc(it.name) + '" aria-label="Expense name">' : '<span class="tname">' + esc(it.name) + '</span>') +
-        '<label class="amt"><span>₹</span><input class="cat-in" type="number" inputmode="decimal" min="0" step="any" placeholder="0" aria-label="Spent on ' + esc(it.name) + '" value="' + (v === undefined ? '' : v) + '"></label>' +
-        (removable ? '<button class="del" type="button" data-act="item-ask" aria-label="Remove ' + esc(it.name) + '">×</button>' : '<span></span>');
-      if (confirming) html += '<div class="meta"><span>Remove ' + esc(it.name || 'this expense') + ' and every amount logged for it?</span><button class="textbtn danger" type="button" data-act="item-yes">Remove</button><button class="textbtn" type="button" data-act="item-no">Keep</button></div>';
-      else if (isP) html += '<div class="meta"><span>' + (it.custom ? 'Added by you, not in the plan' : 'Planned ' + rs(it.amt)) + '</span><span class="diff"></span></div>';
+        (it.sub
+          ? '<div class="autoamt" title="Counted automatically"><span>₹</span><b>' + (cov ? fmt(r2(subShare(it))) : '0') + '</b></div>'
+          : '<label class="amt"><span>₹</span><input class="cat-in" type="number" inputmode="decimal" min="0" step="any" placeholder="0" aria-label="Spent on ' + esc(it.name) + '" value="' + (v === undefined ? '' : v) + '"></label>') +
+        (removable ? '<button class="del" type="button" data-act="item-ask" aria-label="Remove ' + esc(nm) + '">×</button>' : '<span></span>');
+      if (confirming) {
+        var hasDay = !it.sub && v !== undefined;
+        html += '<div class="meta"><span>' + (it.sub ? 'Remove this subscription from every day?' : hasDay ? 'Remove ' + esc(nm) + ' from:' : 'Remove ' + esc(nm) + ' from every day?') + '</span>' +
+          (hasDay ? '<button class="textbtn" type="button" data-act="item-day">Only ' + esc(shortNoYear(parse(di))) + '</button>' : '') +
+          '<button class="textbtn danger" type="button" data-act="item-yes">' + (hasDay ? 'All days' : 'Remove') + '</button><button class="textbtn" type="button" data-act="item-no">Keep</button></div>';
+      } else if (it.sub) {
+        html += '<div class="meta"><span>Subscription · ' + esc(subText(it)) + ' · ' + rs(r2(subShare(it))) + ' a day' + (cov ? '' : ' · does not cover this day') + '</span>' +
+          (removable ? '<button class="textbtn" type="button" data-act="sub-edit">Change</button>' : '') + '</div>';
+      } else if (isP) html += '<div class="meta"><span>' + (it.custom ? 'Added by you, not in the plan' : 'Planned ' + rs(it.amt)) + '</span><span class="diff"></span></div>';
       else html += '<div class="meta"><label class="chk"><input type="checkbox" class="oneoff"' + (it.oneOff ? ' checked' : '') + '> One-off, leave out of the daily budget</label></div>';
       html += '</li>';
     });
-    html += '</ul><div class="sect lbl">Add your own expense</div>' +
-      '<p class="p-text" style="margin-top:4px">Name it once. It then shows on every day of this ' + (isP ? 'plan' : 'tracker') + '. The amount is optional.</p>' +
-      '<form class="addform" id="addForm" autocomplete="off"><input class="field" id="addName" type="text" maxlength="40" list="addNames" placeholder="Expense name" aria-label="New expense name">' +
-      '<label class="amt"><span>₹</span><input id="addAmt" type="number" inputmode="decimal" min="0" step="any" placeholder="0" aria-label="Amount spent"></label>' +
-      '<button class="btn" type="submit">Add</button></form><p class="p-text bad" id="addMsg" hidden></p>' +
-      '<datalist id="addNames">' + suggestions(o).map(function (n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>' +
-      '<div class="quick"><button class="textbtn" type="button" data-act="zero">Log ₹0 spent</button><button class="textbtn danger" type="button" data-act="clear-day">Clear this day</button></div>' +
+    html += '</ul>';
+
+    var editing = ui.editSub ? findItem(o, ui.editSub) : null, mode = editing ? 'sub' : ui.addMode;
+    html += '<div class="sect lbl">' + (editing ? 'Change subscription' : 'Add your own expense') + '</div>';
+    if (!editing) html += '<div class="seg" role="group" aria-label="Type of expense"><button type="button" data-act="mode-spend" aria-pressed="' + (mode === 'spend') + '">Spent today</button><button type="button" data-act="mode-sub" aria-pressed="' + (mode === 'sub') + '">Subscription or bill</button></div>';
+    if (mode === 'sub') {
+      var sb = editing ? editing.sub : null, nameVal = editing ? editing.name : ui.addName;
+      html += '<p class="p-text" style="margin-top:4px">For something you pay in one go that covers a period, like a recharge or an annual plan. The cost is spread evenly over the days it covers, so one big payment does not distort your daily numbers.</p>' +
+        '<form class="subform" id="addForm" autocomplete="off"><input class="field" id="addName" type="text" maxlength="40" placeholder="Name, for example Mobile recharge" aria-label="Subscription name" value="' + esc(nameVal || '') + '">' +
+        '<div class="row2"><label class="amt"><span>₹</span><input id="subAmt" type="number" inputmode="decimal" min="0" step="any" placeholder="Amount paid" aria-label="Total amount paid" value="' + (sb ? sb.amount : '') + '"></label>' +
+        '<div class="pair"><input class="field" id="subN" type="number" inputmode="numeric" min="1" step="1" aria-label="Covers, number of units" value="' + (sb ? sb.n : 1) + '">' +
+        '<select class="field" id="subUnit" aria-label="Unit"><option value="days">days</option><option value="weeks">weeks</option><option value="months">months</option><option value="years">years</option></select></div></div>' +
+        '<label class="paid">Paid on<input class="field" id="subStart" type="date" value="' + (sb ? sb.start : di) + '"></label>' +
+        '<p class="subprev" id="subPrev"></p><button class="btn" type="submit">' + (editing ? 'Save changes' : 'Add subscription') + '</button>' +
+        (editing ? '<button class="btn ghost" type="button" data-act="sub-cancel">Cancel</button>' : '') + '</form><p class="p-text bad" id="addMsg" hidden></p>';
+    } else {
+      html += '<p class="p-text" style="margin-top:4px">Name it once. It then shows on every day of this ' + what + '. The amount is optional.</p>' +
+        '<form class="addform" id="addForm" autocomplete="off"><input class="field" id="addName" type="text" maxlength="40" list="addNames" placeholder="Expense name" aria-label="New expense name" value="' + esc(ui.addName || '') + '">' +
+        '<label class="amt"><span>₹</span><input id="addAmt" type="number" inputmode="decimal" min="0" step="any" placeholder="0" aria-label="Amount spent"></label>' +
+        '<button class="btn" type="submit">Add</button></form><p class="p-text bad" id="addMsg" hidden></p>' +
+        '<datalist id="addNames">' + suggestions(o).map(function (n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>';
+    }
+    html += '<div class="quick"><button class="textbtn" type="button" data-act="zero">Nothing else spent today</button><button class="textbtn danger" type="button" data-act="clear-day">Clear this day</button></div>' +
       '<div class="tot-box" id="dTotal"></div>';
     return html;
   }
-  function renderDay(o) { var b = $('dayPanel'); if (b) b.innerHTML = dayPanelHTML(o); }
+  function updateSubPreview() {
+    var out = $('subPrev');
+    if (!out) return;
+    var amount = parseFloat($('subAmt').value), n = Math.floor(parseFloat($('subN').value)), unit = $('subUnit').value, start = $('subStart').value;
+    if (!(amount > 0) || !(n >= 1) || !DATE_RE.test(start)) { out.textContent = 'Enter what you paid and how long it covers. The cost is then spread evenly over those days.'; return; }
+    var days = subDays(start, Math.min(n, MAXN[unit]), unit);
+    out.textContent = 'Covers ' + plural(days, 'day') + ', ' + short(parse(start)) + ' to ' + short(addDays(parse(start), days - 1)) + '. That is ' + rs(r2(amount / days)) + ' a day.';
+  }
+  function renderDay(o) {
+    var b = $('dayPanel');
+    if (!b) return;
+    b.innerHTML = dayPanelHTML(o);
+    var eds = ui.editSub ? findItem(o, ui.editSub) : null;
+    if ($('subUnit')) $('subUnit').value = eds ? eds.sub.unit : 'months';
+    updateSubPreview();
+  }
 
   function updateDayDerived(o, S) {
     if (!$('dTotal')) return;
@@ -1369,7 +1501,7 @@ else if (typeof exports === 'object'){
       '<dl class="stats"><div><dt>Spent so far</dt><dd>' + rs(S.spent) + '</dd></div><div><dt>Allowance for logged days</dt><dd>' + rs(S.per * S.loggedDays) + '</dd></div>' +
       '<div><dt>Left in the plan</dt><dd>' + rs(S.left) + '</dd></div><div><dt>Days logged</dt><dd>' + S.loggedDays + (S.elapsed && S.loggedDays <= S.elapsed ? ' of ' + S.elapsed + ' so far' : '') + '</dd></div></dl>';
     html += '<p class="note">' + (none ? 'Log what you spend each day. ' : '') + 'Days you saved and days you overspent offset each other in this total.</p>';
-    if (S.unlogged.length) html += '<p class="note">' + plural(S.unlogged.length, 'past day') + ' not logged. <button class="textbtn" type="button" data-act="log-unlogged">Count them as ₹0 spent</button></p>';
+    if (S.unlogged.length) html += '<p class="note">' + plural(S.unlogged.length, 'past day') + ' not logged. <button class="textbtn" type="button" data-act="log-unlogged">Count them as no spending</button></p>';
     el.innerHTML = html;
   }
   function renderPlanBy(o, S) {
@@ -1377,24 +1509,25 @@ else if (typeof exports === 'object'){
     if (!S.loggedDays) { box.innerHTML = '<p class="empty">Log a day to compare each expense with its plan.</p>'; return; }
     box.innerHTML = '<ul class="xlist">' + S.items.map(function (x, i) {
       var it = x.item, pill;
-      if (it.custom) pill = x.spent > 0 ? '<span class="pill bad">Extra ' + rs(x.spent) + '</span>' : '<span class="pill plain">Not used yet</span>';
-      else pill = x.diff > 0.005 ? '<span class="pill ok">Saved ' + rs(x.diff) + '</span>' : x.diff < -0.005 ? '<span class="pill bad">Over by ' + rs(-x.diff) + '</span>' : '<span class="pill">On plan</span>';
+      if (it.custom) pill = x.spent > 0 ? '<span class="pill bad">Extra ' + rs(r2(x.spent)) + '</span>' : '<span class="pill plain">Not used yet</span>';
+      else pill = x.diff > 0.005 ? '<span class="pill ok">Saved ' + rs(r2(x.diff)) + '</span>' : x.diff < -0.005 ? '<span class="pill bad">Over by ' + rs(r2(-x.diff)) + '</span>' : '<span class="pill">On plan</span>';
+      var lead = it.sub ? 'Subscription, ' + subText(it) + (it.custom ? ', not in the plan' : ', in the plan') : (it.custom ? 'Not in the plan' : 'Planned ' + rs(x.planned));
       return '<li class="xrow" style="--seg:var(--c' + (i % 6 + 1) + ')"><div class="x-top"><span class="dot"></span><span class="x-n">' + esc(it.name) + '</span>' + pill + '</div>' +
-        '<div class="x-sub">' + (it.custom ? 'Not in the plan' : 'Planned ' + rs(x.planned)) + ' · Spent ' + rs(x.spent) + ' over ' + plural(S.loggedDays, 'logged day') + '</div></li>';
+        '<div class="x-sub">' + esc(lead) + ' · Spent ' + rs(r2(x.spent)) + ' over ' + plural(S.loggedDays, 'logged day') + '</div></li>';
     }).join('') + '</ul>';
   }
 
   function renderTrackHero(o, S) {
     var el = $('pHero');
     el.className = 'hero';
-    var unl = S.unlogged.length ? '<p class="note">' + plural(S.unlogged.length, 'past day') + ' not logged and left out of the average. If you spent nothing on them, <button class="textbtn" type="button" data-act="log-unlogged">count them as ₹0 spent</button>.</p>' : '';
+    var unl = S.unlogged.length ? '<p class="note">' + plural(S.unlogged.length, 'past day') + ' not logged and left out of the average. If you spent nothing on them, <button class="textbtn" type="button" data-act="log-unlogged">count them as no spending</button>.</p>' : '';
     if (!S.T) {
       el.innerHTML = '<div class="lbl">Suggested daily budget</div><div class="big"><span class="num">–</span></div>' +
         '<p class="note">Log what you spend each day, adding an expense name and amount. After a few days this shows your average and a daily budget that fits your spending.</p>' + unl;
       return;
     }
     var html = '<div class="lbl">Suggested daily budget</div><div class="big"><span class="cur">₹</span><span class="num">' + fmt(S.sugg) + '</span><span class="per">per day</span></div>' +
-      '<dl class="stats"><div><dt>You spend on average</dt><dd>' + rs(S.regAvg) + ' a day</dd></div><div><dt>Budget for ' + plural(o.days, 'day') + '</dt><dd>' + rs(S.sugg * o.days) + '</dd></div>' +
+      '<dl class="stats"><div><dt>You spend on average</dt><dd>' + rs(S.regAvg) + ' a day</dd></div><div><dt>Budget for ' + plural(o.days, 'day') + '</dt><dd>' + rs(r2(S.sugg * o.days)) + '</dd></div>' +
       '<div><dt>Days tracked</dt><dd>' + S.T + (S.elapsed && S.T <= S.elapsed ? ' of ' + S.elapsed + ' so far' : '') + '</dd></div><div><dt>Total spent</dt><dd>' + rs(S.total) + '</dd></div></dl>';
     if (S.T < S.minDays) html += '<p class="note">This is based on only ' + plural(S.T, 'day') + '. Track at least ' + S.minDays + ' days for a steadier figure.</p>';
     html += '<p class="note">Your average plus a ' + o.buffer + '% buffer' + (o.buffer ? '' : ' (none)') + ', worked out for each expense and added up.' + (S.high ? ' Your highest day was ' + rs(S.high.spent) + ' on ' + shortNoYear(parse(S.high.day)) + '.' : '') + '</p>';
@@ -1406,12 +1539,14 @@ else if (typeof exports === 'object'){
     if (!S.T) { box.innerHTML = '<p class="empty">Nothing to show yet. Log a day and each expense appears here with its total and average.</p>'; return; }
     var items = S.items.slice().sort(function (a, b) { return b.total - a.total; });
     box.innerHTML = '<ul class="xlist">' + items.map(function (x) {
-      var idx = o.items.indexOf(x.item);
-      return '<li class="xrow" style="--seg:var(--c' + (idx % 6 + 1) + ')"><div class="x-top"><span class="dot"></span><span class="x-n">' + esc(x.name) + '</span>' + (x.oneOff ? '<span class="pill plain">One-off</span>' : '') +
-        '<span class="x-t">' + rs(x.total) + '</span></div><div class="prog" aria-hidden="true"><i style="width:' + x.share.toFixed(1) + '%"></i></div>' +
-        '<div class="x-sub">Average ' + rs(r2(x.avg)) + ' a day over ' + plural(S.T, 'tracked day') + '<br>' +
-        (x.daysSpent ? rs(r2(x.avgSpendDay)) + ' on the ' + plural(x.daysSpent, 'day') + ' you spent on it · ' : 'Not spent on yet · ') + Math.round(x.share) + '% of all spending<br>' +
-        (x.oneOff ? 'Not part of the daily budget' : 'Suggested ' + rs(x.sugg) + ' a day') + '</div></li>';
+      var idx = o.items.indexOf(x.item), sub = x.sub;
+      var mid = sub ? 'Counted on ' + plural(x.daysSpent, 'tracked day') : (x.daysSpent ? rs(r2(x.avgSpendDay)) + ' on the ' + plural(x.daysSpent, 'day') + ' you spent on it' : 'Not spent on yet');
+      var last = x.oneOff ? 'Not part of the daily budget' : sub ? 'Suggested ' + rs(x.sugg) + ' a day (fixed cost, no buffer)' : 'Suggested ' + rs(x.sugg) + ' a day';
+      return '<li class="xrow" style="--seg:var(--c' + (idx % 6 + 1) + ')"><div class="x-top"><span class="dot"></span><span class="x-n">' + esc(x.name) + '</span>' +
+        (x.oneOff ? '<span class="pill plain">One-off</span>' : '') + (sub ? '<span class="pill plain">Subscription</span>' : '') +
+        '<span class="x-t">' + rs(r2(x.total)) + '</span></div><div class="prog" aria-hidden="true"><i style="width:' + x.share.toFixed(1) + '%"></i></div>' +
+        '<div class="x-sub">' + (sub ? esc(subText(x.item)) + ' = ' + rs(r2(subShare(x.item))) + ' a day<br>' : '') +
+        'Average ' + rs(r2(x.avg)) + ' a day over ' + plural(S.T, 'tracked day') + '<br>' + mid + ' · ' + Math.round(x.share) + '% of all spending<br>' + last + '</div></li>';
     }).join('') + '</ul>';
   }
   function renderSettings(o, S) {
@@ -1486,9 +1621,9 @@ else if (typeof exports === 'object'){
       html += '<tr' + (r.day === ui.day ? ' class="sel"' : '') + '><td><button class="textbtn" type="button" data-act="goto" data-day="' + r.day + '">' + esc(shortNoYear(parse(r.day))) + '</button></td><td>' + rs(r.spent) + '</td>';
       if (isP) html += '<td class="' + netClass(r.net) + '">' + signed(r2(r.net)) + '</td><td class="' + netClass(r.run) + '">' + signed(r2(r.run)) + '</td>';
       else {
-        var best = null, bv = 0, d = o.spend[r.day];
-        o.items.forEach(function (it) { var v = d.c[it.id]; if (v > bv) { bv = v; best = it; } });
-        html += '<td class="txt">' + (best ? esc(best.name) + ' ' + rs(bv) : '–') + '</td>';
+        var best = null, bv = 0;
+        o.items.forEach(function (it) { var v = itemSpend(o, it, r.day); if (v > bv) { bv = v; best = it; } });
+        html += '<td class="txt">' + (best ? esc(best.name) + ' ' + rs(r2(bv)) : '–') + '</td>';
       }
       html += '</tr>';
     });
@@ -1508,7 +1643,7 @@ else if (typeof exports === 'object'){
       renderTrackHero(o, T); updateDayDerived(o, T); renderTrackBy(o, T); renderSettings(o, T); renderBarChart(T); renderLedger(o, T);
     }
   }
-  function setDay(di) { var o = curObj(); if (!o) return; ui.day = clampDay(o, di); renderDay(o); refreshDerived(); }
+  function setDay(di) { var o = curObj(); if (!o) return; ui.day = clampDay(o, di); ui.confirmItem = null; renderDay(o); refreshDerived(); }
 
   function addExpense(o, name, amt) {
     var nm = name.trim().slice(0, 40);
@@ -1529,19 +1664,28 @@ else if (typeof exports === 'object'){
     var S = trackSummary(o);
     var items = S.items.filter(function (x) { return !x.oneOff && x.sugg > 0; });
     if (!items.length) return;
-    var t = todayIso(), start = o.end >= t ? iso(addDays(parse(o.end), 1)) : t, per = 0;
-    items.forEach(function (x) { per += x.sugg; });
-    state = { total: per * o.days, mode: 'duration', start: start, end: iso(addDays(parse(start), o.days - 1)), n: Math.min(MAXN.days, o.days), unit: 'days', sample: false,
-      items: items.map(function (x) { return { id: nid(), name: x.name, amt: x.sugg }; }) };
-    ui.plannerNote = 'Filled in from "' + o.name + '": each expense is your average plus a ' + o.buffer + '% buffer, for ' + plural(o.days, 'day') + ' from ' + short(parse(start)) + '. Change anything, then save it as a plan.';
+    var t = todayIso(), start = o.end >= t ? iso(addDays(parse(o.end), 1)) : t;
+    state = { total: 0, mode: 'duration', start: start, end: iso(addDays(parse(start), o.days - 1)), n: Math.min(MAXN.days, o.days), unit: 'days', sample: false,
+      items: items.map(function (x) {
+        var it = { id: nid(), name: x.name, amt: x.sugg };
+        if (x.sub) it.sub = { amount: x.sub.amount, n: x.sub.n, unit: x.sub.unit };
+        return it;
+      }) };
+    syncSubs();
+    var per = 0;
+    state.items.forEach(function (x) { per += x.amt; });
+    state.total = r2(per * o.days);
+    ui.plannerNote = 'Filled in from "' + o.name + '": each expense is your average plus a ' + o.buffer + '% buffer (subscriptions at their fixed daily cost), for ' + plural(o.days, 'day') + ' from ' + short(parse(start)) + '. Change anything, then save it as a plan.';
     initPlanner();
     go('planner');
   }
 
   function bindDetail(box) {
+    var fail = function (text) { var m = $('addMsg'); if (m) { m.hidden = false; m.className = 'p-text bad'; m.textContent = text; } };
     box.addEventListener('input', function (e) {
       var o = curObj(); if (!o) return;
       var t = e.target;
+      if (t.id === 'subAmt' || t.id === 'subN' || t.id === 'subStart') { updateSubPreview(); return; }
       if (t.id === 'pName') { o.name = t.value.slice(0, 60) || (o.kind === 'plan' ? 'Plan' : 'Expense tracking'); touch(o); return; }
       var row = t.closest('.trow');
       if (t.classList.contains('cat-in') && row) {
@@ -1558,6 +1702,7 @@ else if (typeof exports === 'object'){
     box.addEventListener('change', function (e) {
       var o = curObj(); if (!o) return;
       var t = e.target, row = t.closest('.trow');
+      if (t.id === 'subUnit' || t.id === 'subStart') { updateSubPreview(); return; }
       if (t.id === 'dDate') { if (!DATE_RE.test(t.value)) { t.value = ui.day; return; } setDay(t.value); }
       else if (t.classList.contains('oneoff') && row) { var it = findItem(o, row.dataset.item); if (it) { it.oneOff = t.checked; touch(o); refreshDerived(); } }
       else if (t.id === 'tBuffer') { o.buffer = +t.value; touch(o); refreshDerived(); }
@@ -1570,10 +1715,27 @@ else if (typeof exports === 'object'){
       if (e.target.id !== 'addForm') return;
       e.preventDefault();
       var o = curObj(); if (!o) return;
-      var name = $('addName').value.trim(), amt = parseFloat($('addAmt').value) || 0, msg = $('addMsg');
-      if (!name) { msg.hidden = false; msg.textContent = 'Type a name for the expense first, for example Auto fare.'; $('addName').focus(); return; }
+      var name = $('addName').value.trim().slice(0, 40), editing = ui.editSub ? findItem(o, ui.editSub) : null;
+      if (ui.addMode === 'sub' || editing) {
+        var amount = parseFloat($('subAmt').value), n = Math.floor(parseFloat($('subN').value)), unit = $('subUnit').value, start = $('subStart').value;
+        if (!name) { fail('Type a name for the subscription, for example Mobile recharge.'); return; }
+        if (!(amount > 0)) { fail('Enter the amount you paid.'); return; }
+        if (!(n >= 1) || n > MAXN[unit]) { fail('Enter how long it covers, for example 28 days or 1 month.'); return; }
+        if (!DATE_RE.test(start)) { fail('Choose the date you paid.'); return; }
+        var dup = o.items.find(function (x) { return x !== editing && x.name.trim().toLowerCase() === name.toLowerCase(); });
+        if (dup) { fail('You already have an expense called ' + dup.name + '. Use a different name.'); return; }
+        var sub = { amount: r2(amount), start: start, days: subDays(start, n, unit), n: n, unit: unit, renews: false };
+        if (editing) { editing.name = name; editing.sub = sub; }
+        else o.items.push(o.kind === 'plan' ? { id: rid('e'), name: name, amt: 0, custom: true, sub: sub } : { id: rid('e'), name: name, oneOff: false, sub: sub });
+        ui.editSub = null; ui.addName = ''; ui.addMode = 'spend';
+        touch(o); renderDay(o); refreshDerived();
+        return;
+      }
+      var amt = parseFloat($('addAmt').value) || 0;
+      if (!name) { fail('Type a name for the expense first, for example Auto fare.'); $('addName').focus(); return; }
       if (amt < 0) amt = 0;
       var r = addExpense(o, name, amt);
+      ui.addName = '';
       touch(o);
       renderDay(o); refreshDerived();
       var f = $('addName'); if (f) f.focus();
@@ -1593,12 +1755,24 @@ else if (typeof exports === 'object'){
       else if (act === 'zero') { dayRec(o, ui.day, true).logged = true; touch(o); refreshDerived(); }
       else if (act === 'clear-day') { delete o.spend[ui.day]; touch(o); renderDay(o); refreshDerived(); }
       else if (act === 'log-unlogged') { elapsedInfo(o).unlogged.forEach(function (di) { dayRec(o, di, true).logged = true; }); touch(o); renderDay(o); refreshDerived(); }
+      else if (act === 'mode-spend' || act === 'mode-sub') {
+        var cur = $('addName'); ui.addName = cur ? cur.value : '';
+        ui.addMode = act === 'mode-sub' ? 'sub' : 'spend'; renderDay(o);
+      }
+      else if (act === 'sub-edit') { ui.editSub = row.dataset.item; ui.confirmItem = null; renderDay(o); var f = $('addForm'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      else if (act === 'sub-cancel') { ui.editSub = null; renderDay(o); }
       else if (act === 'item-ask') { ui.confirmItem = row.dataset.item; renderDay(o); refreshDerived(); }
       else if (act === 'item-no') { ui.confirmItem = null; renderDay(o); refreshDerived(); }
+      else if (act === 'item-day') {
+        var rec = o.spend[ui.day], iid = row.dataset.item;
+        if (rec) { delete rec.c[iid]; pruneDay(o, ui.day); }
+        ui.confirmItem = null; touch(o); renderDay(o); refreshDerived();
+      }
       else if (act === 'item-yes') {
         var id = row.dataset.item;
         o.items = o.items.filter(function (x) { return x.id !== id; });
         Object.keys(o.spend).forEach(function (di) { delete o.spend[di].c[id]; pruneDay(o, di); });
+        if (ui.editSub === id) ui.editSub = null;
         ui.confirmItem = null; touch(o); renderDay(o); refreshDerived();
       }
       else if (act === 'use-plan') planFromTracker(o);
@@ -1654,7 +1828,7 @@ else if (typeof exports === 'object'){
   }
   function afterDbReplaced() {
     state = loadPlannerDraft(); tform = loadTrackDraft();
-    ui.id = null; ui.day = null; ui.showAll = false; ui.confirmDel = false; ui.confirmItem = null; ui.plannerNote = '';
+    ui.id = null; ui.day = null; ui.showAll = false; ui.confirmDel = false; ui.confirmItem = null; ui.plannerNote = ''; ui.addMode = 'spend'; ui.editSub = null; ui.addName = '';
     initPlanner(); trackPicker.reset(); updateNav();
     if (ui.view === 'plan' || ui.view === 'track') go('plans'); else route();
   }
